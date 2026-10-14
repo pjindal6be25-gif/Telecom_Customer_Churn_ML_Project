@@ -1,0 +1,23 @@
+====================================================
+TELECOM CUSTOMER CHURN PREDICTION - HOW TO LAUNCH
+====================================================
+
+Supervised binary classification ML model for telecom churn prediction.
+Trained pipeline and preprocessor are already saved in models/.
+
+QUICK START:
+
+1. Install requirements:
+   pip install -r requirements.txt
+
+2. Run the interactive web app (Streamlit):
+   streamlit run app/churn_predictor.py
+
+3. Run single-customer inference (Terminal):
+   python -c "from src.inference import predict_single; print(predict_single({'tenure': 2, 'MonthlyCharges': 80, 'TotalCharges': 160, 'Contract': 'Month-to-month', 'InternetService': 'Fiber optic', 'PaymentMethod': 'Electronic check', 'TechSupport': 'No', 'PaperlessBilling': 'Yes', 'gender': 'Female', 'SeniorCitizen': 0, 'Partner': 'No', 'Dependents': 'No', 'PhoneService': 'Yes', 'MultipleLines': 'No', 'OnlineSecurity': 'No', 'OnlineBackup': 'No', 'DeviceProtection': 'No', 'StreamingTV': 'No', 'StreamingMovies': 'No'}))"
+
+4. (Optional) Re-train full pipeline:
+   python src/train.py
+
+5. (Optional) Open Jupyter Notebook:
+   jupyter notebook notebook/Telecom_Customer_Churn_ML.ipynb
