@@ -209,7 +209,7 @@
                 Recommended: 0.40 (Max Recall & F1)
               </span>
             </div>
-            <input type="range" id="threshold" min="0.20" max="0.80" step="0.05" value="0.50" class="w-full accent-indigo-500 cursor-pointer" oninput="document.getElementById('threshVal').innerText = this.value">
+            <input type="range" id="threshold" min="0.20" max="0.80" step="0.05" value="0.50" class="w-full accent-indigo-500 cursor-pointer" oninput="onThresholdChange(this.value)">
           </div>
         </div>
 
@@ -258,11 +258,67 @@
   </div>
 
   <script>
+    let currentProb = null;
+
+    function onThresholdChange(val) {
+      const numVal = parseFloat(val);
+      document.getElementById('threshVal').innerText = numVal.toFixed(2);
+      if (currentProb !== null) {
+        renderResult(currentProb, numVal);
+      }
+    }
+
+    function renderResult(prob, thresh) {
+      const isChurn = prob >= thresh;
+      const probPercent = (prob * 100).toFixed(1);
+
+      document.getElementById('probScore').innerText = `${probPercent}%`;
+      document.getElementById('probBar').style.width = `${probPercent}%`;
+
+      const badge = document.getElementById('badge');
+      const classResult = document.getElementById('classResult');
+      const probScore = document.getElementById('probScore');
+      const probBar = document.getElementById('probBar');
+      const recText = document.getElementById('recommendationText');
+
+      if (isChurn) {
+        // Exceeds threshold: RED (CHURN)
+        const isSevere = prob >= thresh + 0.15;
+        badge.innerText = isSevere ? 'CRITICAL CHURN RISK' : 'CHURN ALERT';
+        badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-rose-950/90 border border-rose-500/50 text-rose-300';
+        probScore.className = 'text-5xl font-black text-rose-400 tracking-tight';
+        classResult.className = 'text-sm font-semibold uppercase tracking-wider text-rose-400 mt-1';
+        classResult.innerText = `Prediction: CHURN (Score >= Threshold ${(thresh * 100).toFixed(0)}%)`;
+        probBar.className = 'bg-rose-500 h-3 rounded-full transition-all duration-500';
+        recText.innerHTML = `<span class="text-rose-400 font-bold">[CHURN PREDICTED]</span> Customer probability (${probPercent}%) meets or exceeds the active decision threshold of ${(thresh * 100).toFixed(0)}%. Immediate proactive retention intervention required.`;
+      } else if (prob >= thresh - 0.10) {
+        // Near threshold: AMBER (BORDERLINE)
+        badge.innerText = 'BORDERLINE WATCHLIST';
+        badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-amber-950/90 border border-amber-500/50 text-amber-300';
+        probScore.className = 'text-5xl font-black text-amber-400 tracking-tight';
+        classResult.className = 'text-sm font-semibold uppercase tracking-wider text-amber-400 mt-1';
+        classResult.innerText = `Prediction: NO CHURN (Near Threshold Watchlist)`;
+        probBar.className = 'bg-amber-500 h-3 rounded-full transition-all duration-500';
+        recText.innerHTML = `<span class="text-amber-400 font-bold">[BORDERLINE RETENTION]</span> Customer probability (${probPercent}%) is just below the active ${(thresh * 100).toFixed(0)}% threshold. At-risk account requiring proactive monitoring.`;
+      } else {
+        // Safely below threshold: GREEN (RETAINED)
+        badge.innerText = 'RETAINED (LOW RISK)';
+        badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-950/90 border border-emerald-500/50 text-emerald-300';
+        probScore.className = 'text-5xl font-black text-emerald-400 tracking-tight';
+        classResult.className = 'text-sm font-semibold uppercase tracking-wider text-emerald-400 mt-1';
+        classResult.innerText = `Prediction: NO CHURN (Retained)`;
+        probBar.className = 'bg-emerald-500 h-3 rounded-full transition-all duration-500';
+        recText.innerHTML = `<span class="text-emerald-400 font-bold">[RETAINED]</span> Customer probability (${probPercent}%) is safely under the active ${(thresh * 100).toFixed(0)}% decision threshold. Customer relationship is stable.`;
+      }
+    }
+
     document.getElementById('churnForm').addEventListener('submit', async (e) => {
       e.preventDefault();
       const btn = document.getElementById('submitBtn');
       btn.disabled = true;
       btn.innerHTML = `<svg class="animate-spin h-5 w-5 text-white" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg> <span>Evaluating Pipeline...</span>`;
+
+      const thresholdVal = parseFloat(document.getElementById('threshold').value) || 0.50;
 
       const payload = {
         gender: document.getElementById('gender').value,
@@ -284,7 +340,7 @@
         PaymentMethod: document.getElementById('PaymentMethod').value,
         MonthlyCharges: parseFloat(document.getElementById('MonthlyCharges').value) || 0,
         TotalCharges: parseFloat(document.getElementById('TotalCharges').value) || 0,
-        threshold: parseFloat(document.getElementById('threshold').value) || 0.50
+        threshold: thresholdVal
       };
 
       try {
@@ -309,33 +365,9 @@
         }
 
         const data = await res.json();
+        currentProb = data.probability;
+        renderResult(currentProb, thresholdVal);
 
-        // Update UI
-        const prob = data.probability_percent;
-        document.getElementById('probScore').innerText = `${prob.toFixed(1)}%`;
-        document.getElementById('classResult').innerText = `Prediction: ${data.predicted_class}`;
-        document.getElementById('probBar').style.width = `${prob}%`;
-        document.getElementById('recommendationText').innerText = data.recommendation;
-
-        const badge = document.getElementById('badge');
-        badge.innerText = data.risk_label;
-
-        if (data.risk_label === 'High Risk') {
-          badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-rose-950/80 border border-rose-500/40 text-rose-300';
-          document.getElementById('probScore').className = 'text-5xl font-black text-rose-400 tracking-tight';
-          document.getElementById('classResult').className = 'text-sm font-semibold uppercase tracking-wider text-rose-400 mt-1';
-          document.getElementById('probBar').className = 'bg-rose-500 h-3 rounded-full transition-all duration-700';
-        } else if (data.risk_label === 'Medium Risk') {
-          badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-amber-950/80 border border-amber-500/40 text-amber-300';
-          document.getElementById('probScore').className = 'text-5xl font-black text-amber-400 tracking-tight';
-          document.getElementById('classResult').className = 'text-sm font-semibold uppercase tracking-wider text-amber-400 mt-1';
-          document.getElementById('probBar').className = 'bg-amber-500 h-3 rounded-full transition-all duration-700';
-        } else {
-          badge.className = 'text-xs px-2.5 py-1 rounded-full font-bold bg-emerald-950/80 border border-emerald-500/40 text-emerald-300';
-          document.getElementById('probScore').className = 'text-5xl font-black text-emerald-400 tracking-tight';
-          document.getElementById('classResult').className = 'text-sm font-semibold uppercase tracking-wider text-emerald-400 mt-1';
-          document.getElementById('probBar').className = 'bg-emerald-500 h-3 rounded-full transition-all duration-700';
-        }
       } catch (err) {
         alert('Error scoring customer: ' + err.message);
       } finally {

@@ -114,17 +114,23 @@ def calculate_prediction(data: dict, threshold: float = 0.50) -> dict:
 
     # 4. Sigmoid activation
     prob = 1.0 / (1.0 + math.exp(-linear_sum))
-    predicted_class = "Churn" if prob >= threshold else "No Churn"
+    is_churn = prob >= threshold
+    predicted_class = "Churn" if is_churn else "No Churn"
 
-    if prob >= 0.65:
-        risk_label = "High Risk"
-        recommendation = "[High Risk] Immediate intervention required. Proactively offer 1-year contract discount or dedicated support."
-    elif prob >= 0.35:
-        risk_label = "Medium Risk"
-        recommendation = "[Medium Risk] Moderate attrition risk. Recommend contract upgrade incentives or bundled tech support."
+    if is_churn:
+        if prob >= threshold + 0.15:
+            risk_label = "High Risk (Churn)"
+            recommendation = f"[High Churn Risk] Probability ({prob*100:.1f}%) significantly exceeds your operating threshold ({threshold*100:.0f}%). Immediate proactive outreach recommended."
+        else:
+            risk_label = "Moderate Risk (Churn)"
+            recommendation = f"[Moderate Churn Risk] Probability ({prob*100:.1f}%) is above your operating threshold ({threshold*100:.0f}%). Offer contract upgrade or service credits."
     else:
-        risk_label = "Low Risk"
-        recommendation = "[Low Risk] Customer is stable. Good candidate for loyalty rewards or non-intrusive service additions."
+        if prob >= threshold - 0.10:
+            risk_label = "Borderline (Watchlist)"
+            recommendation = f"[Borderline Customer] Probability ({prob*100:.1f}%) is just below your threshold ({threshold*100:.0f}%). Monitor closely for sudden usage drops."
+        else:
+            risk_label = "Low Risk (Retained)"
+            recommendation = f"[Low Churn Risk] Probability ({prob*100:.1f}%) is safely below your threshold ({threshold*100:.0f}%). Customer relationship is healthy."
 
     return {
         "predicted_class": predicted_class,
