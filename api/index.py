@@ -1,6 +1,6 @@
 import os
-import joblib
-import pandas as pd
+import json
+import math
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -9,7 +9,7 @@ from typing import Optional
 
 app = FastAPI(
     title="Telecom Customer Churn Predictor API",
-    description="Serverless API for customer churn classification",
+    description="Ultra-lightweight Serverless API for Vercel",
     version="1.0.0"
 )
 
@@ -21,28 +21,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Load pipeline safely across relative Vercel paths
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, '..'))
 
-CANDIDATE_PATHS = [
-    os.path.join(BASE_DIR, 'final_pipeline.joblib'),
-    os.path.join(PROJECT_ROOT, 'models', 'final_pipeline.joblib'),
-    os.path.join(PROJECT_ROOT, 'app', 'final_pipeline.joblib'),
+WEIGHTS_PATHS = [
+    os.path.join(BASE_DIR, 'model_weights.json'),
+    os.path.join(PROJECT_ROOT, 'models', 'model_weights.json'),
+    os.path.join(PROJECT_ROOT, 'api', 'model_weights.json')
 ]
 
-_pipeline = None
+_model_meta = None
 
-def get_pipeline():
-    global _pipeline
-    if _pipeline is None:
-        for path in CANDIDATE_PATHS:
-            if os.path.exists(path):
-                _pipeline = joblib.load(path)
+def get_model_meta():
+    global _model_meta
+    if _model_meta is None:
+        for p in WEIGHTS_PATHS:
+            if os.path.exists(p):
+                with open(p, 'r') as f:
+                    _model_meta = json.load(f)
                 break
-        if _pipeline is None:
-            raise FileNotFoundError("Trained pipeline could not be found.")
-    return _pipeline
+        if _model_meta is None:
+            raise FileNotFoundError("Model weights JSON not found.")
+    return _model_meta
 
 class CustomerInput(BaseModel):
     gender: str = "Female"
@@ -66,20 +66,6 @@ class CustomerInput(BaseModel):
     TotalCharges: float = Field(171.0, ge=0.0)
     threshold: Optional[float] = Field(0.50, ge=0.10, le=0.90)
 
-def compute_service_count(row: dict) -> int:
-    services = [
-        row.get('PhoneService') == 'Yes',
-        row.get('MultipleLines') == 'Yes',
-        row.get('InternetService') in ['DSL', 'Fiber optic'],
-        row.get('OnlineSecurity') == 'Yes',
-        row.get('OnlineBackup') == 'Yes',
-        row.get('DeviceProtection') == 'Yes',
-        row.get('TechSupport') == 'Yes',
-        row.get('StreamingTV') == 'Yes',
-        row.get('StreamingMovies') == 'Yes'
-    ]
-    return sum(int(s) for s in services)
-
 @app.get("/")
 def home():
     public_file = os.path.join(PROJECT_ROOT, 'public', 'index.html')
@@ -94,20 +80,47 @@ def health():
     return {
         "status": "online",
         "service": "Telecom Customer Churn Predictor",
+        "runtime": "Vercel Serverless (Ultra-Lightweight)",
         "model": "Logistic Regression (Final Tuned)"
     }
 
 @app.post("/api/predict")
 def predict(customer: CustomerInput):
     try:
-        pipeline = get_pipeline()
+        meta = get_model_meta()
         data = customer.model_dump()
         threshold = data.pop('threshold', 0.50) or 0.50
 
-        data['SubscribedServiceCount'] = compute_service_count(data)
-        df_input = pd.DataFrame([data])
+        num_cols = meta['num_cols']
+        scaler_mean = meta['scaler_mean']
+        scaler_scale = meta['scaler_scale']
 
-        prob = float(pipeline.predict_proba(df_input)[0, 1])
+        # 1. Scale numerical features (x - mean) / scale
+        x_num = [
+            (float(data[col]) - scaler_mean[i]) / scaler_scale[i]
+            for i, col in enumerate(num_cols)
+        ]
+
+        # 2. One-hot encode categorical features (drop='first')
+        cat_cols = meta['cat_cols']
+        categories = meta['categories']
+        x_cat = []
+
+        for i, col in enumerate(cat_cols):
+            val = str(data[col])
+            cats = categories[i]
+            for cat in cats[1:]:
+                x_cat.append(1.0 if val == cat else 0.0)
+
+        # 3. Linear combination
+        x_all = x_num + x_cat
+        coefficients = meta['coefficients']
+        intercept = meta['intercept']
+
+        linear_sum = sum(a * b for a, b in zip(x_all, coefficients)) + intercept
+
+        # 4. Sigmoid activation
+        prob = 1.0 / (1.0 + math.exp(-linear_sum))
         predicted_class = "Churn" if prob >= threshold else "No Churn"
 
         if prob >= 0.65:
